@@ -1,4 +1,3 @@
-components/TopBar.tsx
 'use client'
 import { useState } from 'react'
 import { Activity, RefreshCw, Wifi, WifiOff, Clock, AlertTriangle } from 'lucide-react'
