@@ -1,18 +1,17 @@
-'use client'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { SOURCES, classifyNews, simpleHash } from '@/lib/sources'
 import { parseRSSFeed } from '@/lib/rss-parser'
 
 export const maxDuration = 60
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   const headerSecret = req.headers.get('authorization')
   const urlSecret = req.nextUrl.searchParams.get('secret')
   const secret = headerSecret ?? `Bearer ${urlSecret ?? ''}`
   
-  // تأكد من وجود CRON_SECRET في Environment Variables في Vercel
+  // التحقق من مفتاح الحماية
   if (secret !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -38,11 +37,11 @@ export async function GET(req: NextRequest) {
       for (const item of feed.items) {
         results.fetched++
 
-        const title = item.title
+        const title = item.title || ''
         const summary = item.description?.slice(0, 600) ?? ''
         const hash = simpleHash(title + source.id)
 
-        // التحقق من وجود الخبر مسبقاً في جدول news_feed
+        // التحقق من التكرار
         const { data: existing } = await supabaseAdmin
           .from('news_feed')
           .select('id, duplicate_sources')
@@ -73,12 +72,9 @@ export async function GET(req: NextRequest) {
           publishedAt = new Date().toISOString()
         }
 
-        // إضافة الخبر للجدول الذي تم إنشاؤه في Supabase
+        // الحفظ في قاعدة البيانات
         const { error } = await supabaseAdmin.from('news_feed').insert({
           title,
-          title_ar: null,
-          summary,
-          summary_ar: null,
           source_url: item.link,
           source_name: source.name_ar,
           sector: source.category,
@@ -99,15 +95,13 @@ export async function GET(req: NextRequest) {
         })
 
         if (error) {
-          if (!error.message.includes('duplicate') && !error.message.includes('unique')) {
-            results.errors.push(`${source.id}: ${error.message}`)
-          }
+          results.errors.push(`${source.id}: ${error.message}`)
         } else {
           results.inserted++
         }
       }
 
-      // تحديث حالة المصادر في جدول fetch_sources
+      // تحديث حالة المصدر
       await supabaseAdmin
         .from('fetch_sources')
         .upsert({
@@ -119,19 +113,10 @@ export async function GET(req: NextRequest) {
 
     } catch (err) {
       results.errors.push(`${source.id}: ${String(err)}`)
-
-      await supabaseAdmin
-        .from('fetch_sources')
-        .upsert({
-          source_id: source.id,
-          name: source.name_ar,
-          last_fetched: new Date().toISOString(),
-          status: 'error',
-        }, { onConflict: 'source_id' })
     }
   }
 
-  // تسجيل العملية في sync_log
+  // تسجيل لوج المزامنة
   await supabaseAdmin.from('sync_log').insert({
     fetched: results.fetched,
     inserted: results.inserted,
