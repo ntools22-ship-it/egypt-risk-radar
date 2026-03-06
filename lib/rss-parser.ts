@@ -1,4 +1,3 @@
-// lib/rss-parser.ts
 // Lightweight RSS/Atom parser — no external dependency needed
 
 export interface RSSItem {
