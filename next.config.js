@@ -1,8 +1,7 @@
-/** @type {import('/** @type {import('next').NextConfig} */
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverActions: true,
-  },
+  // تم إزالة serverActions لأنها أصبحت مفعلة تلقائياً في النسخ الجديدة
 }
 
 module.exports = nextConfig
