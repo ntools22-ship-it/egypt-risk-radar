@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase'
 
 export const maxDuration = 60
 
-// ── المصادر الشاملة (بنوك، تمويل، صناعة، زراعة) ────────────────────────────────
+// ── المصادر الشاملة ──────────────────────────────────────────────────────────
 const SOURCES = [
   { id: 'amwal', name: 'أموال الغد', rss: 'https://www.amwalalghad.com/feed/', category: 'تمويل' },
   { id: 'amwal_banks', name: 'أموال الغد - بنوك', rss: 'https://www.amwalalghad.com/category/banks/feed/', category: 'بنوك' },
@@ -16,11 +16,7 @@ const SOURCES = [
   { id: 'enterprise', name: 'Enterprise', rss: 'https://enterprise.press/feed/', category: 'أعمال' },
 ]
 
-// ── كلمات المخاطر للتحليل الذكي ──────────────────────────────────────────────
-const RISK_KEYWORDS = ['تعثر', 'إفلاس', 'تصفية', 'حجز', 'مديونية', 'خسارة', 'إعادة هيكلة', 'أزمة', 'تخلف']
-const POSITIVE_KEYWORDS = ['استثمار', 'نمو', 'توسع', 'تمويل', 'زيادة رأس مال', 'استحواذ']
-
-// ── الكيانات (بنوك وشركات) ──────────────────────────────────────────────────
+const RISK_KEYWORDS = ['تعثر', 'إفلاس', 'تصفية', 'حجز', 'مديونية', 'خسارة', 'إعادة هيكلة', 'أزمة']
 const KNOWN_ENTITIES = ['البنك الأهلي', 'بنك مصر', 'CIB', 'بنك القاهرة', 'أوراسكوم', 'طلعت مصطفى', 'فوري']
 
 function detectIndustry(text: string): string {
@@ -35,13 +31,10 @@ function detectIndustry(text: string): string {
 function classifyNews(title: string, summary: string) {
   const text = `${title} ${summary}`.toLowerCase()
   const riskScore = RISK_KEYWORDS.filter(k => text.includes(k)).length
-  
   let sentiment = 'محايد', color = 'neutral', level = 'منخفض'
   if (riskScore >= 2) { sentiment = 'سلبي'; color = 'red'; level = 'حرج' }
   else if (riskScore === 1) { sentiment = 'تحذير'; color = 'amber'; level = 'متوسط' }
-  
   const entities = KNOWN_ENTITIES.filter(e => text.includes(e.toLowerCase()))
-  
   return { sentiment, sentimentColor: color, riskLevel: level, industry: detectIndustry(text), entities }
 }
 
@@ -51,13 +44,60 @@ function simpleHash(str: string): string {
   return Math.abs(hash).toString(16)
 }
 
-// ── RSS Parser ────────────────────────────────────────────────────────────────
 async function fetchRSS(url: string) {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } })
     const xml = await res.text()
     const items = xml.match(/<item[\s\S]*?<\/item>/gi) ?? []
     return items.slice(0, 10).map(item => {
       const title = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:]]>)?<\/title>/i)?.[1] ?? ''
       const link = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:]]>)?<\/link>/i)?.[1] ?? ''
-      const desc = item.match(/<description>(?:<!\
+      const desc = item.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:]]>)?<\/description>/i)?.[1] ?? ''
+      return { title, link, description: desc.replace(/<[^>]+>/g, '').trim() }
+    }).filter(i => i.title && i.link)
+  } catch { return [] }
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const key = searchParams.get('key')
+  
+  if (key !== 'radar2026secret') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const results = { fetched: 0, inserted: 0, duplicates: 0, errors: [] as string[] }
+
+  for (const source of SOURCES) {
+    const items = await fetchRSS(source.rss)
+    for (const item of items) {
+      results.fetched++
+      const hash = simpleHash(item.title)
+      const cls = classifyNews(item.title, item.description)
+
+      // ملاحظة: تأكد أن اسم الجدول في Supabase هو 'news_feed' أو 'news'
+      const { error } = await supabaseAdmin.from('news_feed').insert({
+        title: item.title,
+        summary: item.description.slice(0, 500),
+        source_url: item.link,
+        source_name: source.name,
+        industry: cls.industry,
+        risk_level: cls.riskLevel,
+        sentiment: cls.sentiment,
+        sentiment_color: cls.sentimentColor,
+        entities: cls.entities,
+        content_hash: hash,
+        published_at: new Date().toISOString(),
+      })
+
+      if (error) {
+        if (error.code === '23505') results.duplicates++
+        else results.errors.push(error.message)
+      } else {
+        results.inserted++
+      }
+    }
+  }
+
+  return NextResponse.json({ success: true, ...results })
+}
