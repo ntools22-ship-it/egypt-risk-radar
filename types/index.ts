@@ -1,6 +1,3 @@
-
-types/index.ts
-
 export type RiskLevel = 'حرج' | 'مرتفع' | 'متوسط' | 'منخفض'
 export type ClientSize = 'كبرى' | 'متوسط' | 'صغير' | 'أفراد'
 export type RiskType = 'ائتماني' | 'تشغيلي' | 'كلي' | 'قانوني'
