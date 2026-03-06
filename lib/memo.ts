@@ -1,4 +1,3 @@
-// lib/memo.ts
 // Generates professional Arabic bank memo summaries
 
 import type { NewsItem } from '@/types'
