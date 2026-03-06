@@ -1,4 +1,3 @@
-app/api/fetch-news/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { SOURCES, classifyNews, simpleHash } from '@/lib/sources'
