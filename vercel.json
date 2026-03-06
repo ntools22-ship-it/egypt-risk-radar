@@ -2,15 +2,7 @@
   "crons": [
     {
       "path": "/api/fetch-news",
-      "schedule": "*/15 * * * *"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
-      ]
+      "schedule": "0 6 * * *"
     }
   ]
 }
