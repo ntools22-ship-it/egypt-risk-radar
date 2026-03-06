@@ -1,4 +1,3 @@
-supabase/migrations/001_radar_al_makhater_schema.sql
 -- رادار المخاطر — Database Schema
 
 -- Enable UUID extension
