@@ -1,0 +1,57 @@
+
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-cairo: 'Cairo', sans-serif;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0e1a; }
+::-webkit-scrollbar-thumb { background: #1e2a40; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2a3a55; }
+
+::selection { background: rgba(26, 86, 219, 0.3); color: #e2e8f0; }
+
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-inner { animation: ticker 40s linear infinite; }
+.ticker-inner:hover { animation-play-state: paused; }
+
+.gradient-glow-red {
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(239, 68, 68, 0.1);
+}
+.gradient-glow-amber {
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2), 0 2px 8px rgba(245, 158, 11, 0.08);
+}
+.gradient-glow-green {
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2), 0 2px 8px rgba(16, 185, 129, 0.08);
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+.live-dot { animation: livePulse 2s ease-in-out infinite; }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.card-enter { animation: cardIn 0.35s ease both; }
+
+@keyframes breakingPulse {
+  0%, 100% { background-color: #ef4444; }
+  50% { background-color: #dc2626; }
+}
+.badge-breaking { animation: breakingPulse 1.2s ease-in-out infinite; }
+
+.font-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+[dir="rtl"] .ltr { direction: ltr; unicode-bidi: bidi-override; }
+[dir="rtl"] input, [dir="rtl"] textarea { text-align: right; }
