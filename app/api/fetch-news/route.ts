@@ -1,138 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { SOURCES, classifyNews, simpleHash } from '@/lib/sources'
-import { parseRSSFeed } from '@/lib/rss-parser'
 
 export const maxDuration = 60
 
-export async function GET(req: NextRequest) {
-  const secret = req.headers.get('authorization')
-  if (secret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+// ── المصادر الشاملة (بنوك، تمويل، صناعة، زراعة) ────────────────────────────────
+const SOURCES = [
+  { id: 'amwal', name: 'أموال الغد', rss: 'https://www.amwalalghad.com/feed/', category: 'تمويل' },
+  { id: 'amwal_banks', name: 'أموال الغد - بنوك', rss: 'https://www.amwalalghad.com/category/banks/feed/', category: 'بنوك' },
+  { id: 'amwal_companies', name: 'أموال الغد - شركات', rss: 'https://www.amwalalghad.com/category/companies/feed/', category: 'شركات' },
+  { id: 'hapi', name: 'حابي', rss: 'https://hapijournal.com/feed/', category: 'صفقات' },
+  { id: 'almal', name: 'المال', rss: 'https://almalnews.com/feed/', category: 'بنوك' },
+  { id: 'masrawy', name: 'مصراوي - اقتصاد', rss: 'https://www.masrawy.com/rss/Economy', category: 'اقتصاد' },
+  { id: 'bloomberg_ar', name: 'اقتصاد الشرق', rss: 'https://www.bloombergalarabiya.com/feed', category: 'تحليلات' },
+  { id: 'ahram_eco', name: 'الأهرام الاقتصادي', rss: 'https://gate.ahram.org.eg/rss/5.aspx', category: 'صناعة وزراعة' },
+  { id: 'enterprise', name: 'Enterprise', rss: 'https://enterprise.press/feed/', category: 'أعمال' },
+]
 
-  const results = {
-    fetched: 0,
-    inserted: 0,
-    duplicates: 0,
-    errors: [] as string[],
-    sources_processed: 0,
-  }
+// ── كلمات المخاطر للتحليل الذكي ──────────────────────────────────────────────
+const RISK_KEYWORDS = ['تعثر', 'إفلاس', 'تصفية', 'حجز', 'مديونية', 'خسارة', 'إعادة هيكلة', 'أزمة', 'تخلف']
+const POSITIVE_KEYWORDS = ['استثمار', 'نمو', 'توسع', 'تمويل', 'زيادة رأس مال', 'استحواذ']
 
-  for (const source of SOURCES.filter(s => s.enabled && s.rss_url)) {
-    try {
-      const feed = await parseRSSFeed(source.rss_url!)
-      if (!feed) {
-        results.errors.push(`${source.id}: no feed returned`)
-        continue
-      }
+// ── الكيانات (بنوك وشركات) ──────────────────────────────────────────────────
+const KNOWN_ENTITIES = ['البنك الأهلي', 'بنك مصر', 'CIB', 'بنك القاهرة', 'أوراسكوم', 'طلعت مصطفى', 'فوري']
 
-      results.sources_processed++
-
-      for (const item of feed.items) {
-        results.fetched++
-
-        const title = item.title
-        const summary = item.description?.slice(0, 600) ?? ''
-        const hash = simpleHash(title + source.id)
-
-        const { data: existing } = await supabaseAdmin
-          .from('news_feed')
-          .select('id, duplicate_sources')
-          .eq('content_hash', hash)
-          .single()
-
-        if (existing) {
-          const sources: string[] = existing.duplicate_sources ?? []
-          if (!sources.includes(source.name)) {
-            await supabaseAdmin
-              .from('news_feed')
-              .update({
-                duplicate_sources: [...sources, source.name],
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', existing.id)
-          }
-          results.duplicates++
-          continue
-        }
-
-        const classification = classifyNews(title, summary, source.category)
-
-        let publishedAt: string
-        try {
-          publishedAt = item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString()
-        } catch {
-          publishedAt = new Date().toISOString()
-        }
-
-        const { error } = await supabaseAdmin.from('news_feed').insert({
-          title,
-          title_ar: null,
-          summary,
-          summary_ar: null,
-          source_url: item.link,
-          source_name: source.name_ar,
-          sector: source.category,
-          industry: classification.industry,
-          risk_level: classification.riskLevel,
-          risk_type: classification.riskType,
-          client_size: classification.clientSize,
-          sentiment: classification.sentiment,
-          sentiment_color: classification.sentimentColor,
-          is_breaking: classification.riskLevel === 'حرج',
-          is_early_warning: classification.isEarlyWarning,
-          category: source.category,
-          keywords: classification.keywords,
-          entities: classification.entities,
-          content_hash: hash,
-          duplicate_sources: [],
-          published_at: publishedAt,
-        })
-
-        if (error) {
-          if (!error.message.includes('duplicate') && !error.message.includes('unique')) {
-            results.errors.push(`${source.id}: ${error.message}`)
-          }
-        } else {
-          results.inserted++
-        }
-      }
-
-      await supabaseAdmin
-        .from('fetch_sources')
-        .upsert({
-          source_id: source.id,
-          name: source.name_ar,
-          last_fetched: new Date().toISOString(),
-          status: 'active',
-        }, { onConflict: 'source_id' })
-
-    } catch (err) {
-      results.errors.push(`${source.id}: ${String(err)}`)
-      await supabaseAdmin
-        .from('fetch_sources')
-        .upsert({
-          source_id: source.id,
-          name: source.name_ar,
-          last_fetched: new Date().toISOString(),
-          status: 'error',
-        }, { onConflict: 'source_id' })
-    }
-  }
-
-  await supabaseAdmin.from('sync_log').insert({
-    fetched: results.fetched,
-    inserted: results.inserted,
-    duplicates: results.duplicates,
-    errors: results.errors,
-    sources_processed: results.sources_processed,
-    synced_at: new Date().toISOString(),
-  })
-
-  return NextResponse.json({ success: true, ...results })
+function detectIndustry(text: string): string {
+  const t = text.toLowerCase()
+  if (['بنك', 'مصرف', 'ائتمان'].some(k => t.includes(k))) return 'بنوك'
+  if (['عقار', 'إسكان'].some(k => t.includes(k))) return 'عقارات'
+  if (['مصنع', 'صناعة'].some(k => t.includes(k))) return 'صناعة'
+  if (['زراعة', 'محصول'].some(k => t.includes(k))) return 'زراعة'
+  return 'عام'
 }
 
-export async function POST(req: NextRequest) {
-  return GET(req)
+function classifyNews(title: string, summary: string) {
+  const text = `${title} ${summary}`.toLowerCase()
+  const riskScore = RISK_KEYWORDS.filter(k => text.includes(k)).length
+  
+  let sentiment = 'محايد', color = 'neutral', level = 'منخفض'
+  if (riskScore >= 2) { sentiment = 'سلبي'; color = 'red'; level = 'حرج' }
+  else if (riskScore === 1) { sentiment = 'تحذير'; color = 'amber'; level = 'متوسط' }
+  
+  const entities = KNOWN_ENTITIES.filter(e => text.includes(e.toLowerCase()))
+  
+  return { sentiment, sentimentColor: color, riskLevel: level, industry: detectIndustry(text), entities }
 }
+
+function simpleHash(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) hash = ((hash << 5) - hash) + str.charCodeAt(i)
+  return Math.abs(hash).toString(16)
+}
+
+// ── RSS Parser ────────────────────────────────────────────────────────────────
+async function fetchRSS(url: string) {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    const xml = await res.text()
+    const items = xml.match(/<item[\s\S]*?<\/item>/gi) ?? []
+    return items.slice(0, 10).map(item => {
+      const title = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:]]>)?<\/title>/i)?.[1] ?? ''
+      const link = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:]]>)?<\/link>/i)?.[1] ?? ''
+      const desc = item.match(/<description>(?:<!\
