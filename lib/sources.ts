@@ -1,10 +1,11 @@
+// تعريف الواجهة مباشرة في الملف لحل مشكلة الـ Import ولتطابق أنواع الـ API
 export interface SourceConfig {
   id: string
   name: string
   name_ar: string
   base_url: string
   rss_url?: string
-  type: 'rss' | 'api' | 'scraper'
+  type: 'rss' | 'api' | 'scrape' // تم التعديل هنا لتطابق كود الـ Route
   category: string
   enabled: boolean
   selector?: {
@@ -67,7 +68,7 @@ export const SOURCES: SourceConfig[] = [
     name: 'FeBanks CBE',
     name_ar: 'في البنوك - المركزي',
     base_url: 'https://febanks.com',
-    rss_url: 'https://febanks.com/tag/%d8%a7%d9%84%d8%a8%d9%86%d9%83-%d8%a7%d9%84%d9%85%d8% مركري/feed/',
+    rss_url: 'https://febanks.com/tag/%d8%a7%d9%84%d8%a8%d9%86%d9%83-%d8%a7%d9%84%d9%85%d8%b1%d9%83%d8%b2%d9%8ي/feed/',
     type: 'rss',
     category: 'cbe',
     enabled: true,
@@ -223,4 +224,75 @@ export function classifyNews(title: string, summary: string, sourceCategory: str
   const creditKw = ['تعثر', 'مديونية', 'default', 'NPL', 'إفلاس', 'ديون']
   const opKw = ['توقف', 'عطل', 'أزمة', 'operational', 'disruption']
 
-  let riskType: 'ائ
+  let riskType: 'ائتماني' | 'تشغيلي' | 'كلي' | 'قانوني' = 'ائتماني'
+  if (legalKw.some(k => text.includes(k))) riskType = 'قانوني'
+  else if (macroKw.some(k => text.includes(k))) riskType = 'كلي'
+  else if (opKw.some(k => text.includes(k))) riskType = 'تشغيلي'
+  else if (creditKw.some(k => text.includes(k))) riskType = 'ائتماني'
+
+  let smartCategory = sourceCategory
+  if (text.includes('البنك المركزي') || text.includes('cbe') || text.includes('سياسة نقدية') || text.includes('فائدة')) {
+    smartCategory = 'cbe'
+  } else if (text.includes('دولار') || text.includes('يورو') || text.includes('سعر الصرف') || text.includes('جنيه')) {
+    smartCategory = 'dollar'
+  } else if (RISK_KEYWORDS.filter(k => text.includes(k)).length >= 2) {
+    smartCategory = 'warning'
+  }
+
+  const industryMap: Record<string, string[]> = {
+    'عقارات': ['عقار', 'إسكان', 'تطوير عقاري', 'real estate'],
+    'زراعة': ['زراعة', 'محاصيل', 'agriculture', 'farming'],
+    'صناعة': ['مصنع', 'صناعة', 'تصنيع', 'industrial'],
+    'تجارة': ['تجارة', 'بيع', 'retail', 'trade'],
+    'طاقة': ['طاقة', 'كهرباء', 'بترول', 'energy', 'oil'],
+    'تكنولوجيا': ['تقنية', 'رقمي', 'تطبيق', 'technology', 'digital'],
+    'سياحة': ['سياحة', 'فندق', 'tourism', 'hotel'],
+    'بنوك': ['بنك', 'مصرف', 'bank', 'banking'],
+    'تأمين': ['تأمين', 'insurance'],
+    'اتصالات': ['اتصالات', 'telecom', 'موبايل'],
+  }
+  let industry = 'اقتصاد عام'
+  for (const [ind, keywords] of Object.entries(industryMap)) {
+    if (keywords.some(k => text.includes(k))) { industry = ind; break }
+  }
+
+  let clientSize: 'كبرى' | 'متوسط' | 'صغير' | 'أفراد' = 'متوسط'
+  if (['شركة كبرى', 'مجموعة', 'قطاع', 'corporate'].some(k => text.includes(k))) clientSize = 'كبرى'
+  else if (['أفراد', 'مواطن', 'مستهلك', 'retail'].some(k => text.includes(k))) clientSize = 'أفراد'
+
+  const isEarlyWarning = riskScore >= 2 || sourceCategory === 'warning'
+  const isBreaking = breakingScore >= 1 || sourceCategory === 'breaking'
+
+  const entityPattern = /(?:شركة|بنك|مصرف|مجموعة|هيئة|صندوق)\s+[\u0600-\u06FF\s]{2,20}/g
+  const entities = (title + ' ' + summary).match(entityPattern)?.map(e => e.trim()) ?? []
+  const keywords = [...new Set([
+    ...RISK_KEYWORDS.filter(k => text.includes(k.toLowerCase())),
+    ...POSITIVE_KEYWORDS.filter(k => text.includes(k.toLowerCase())),
+  ])]
+
+  return {
+    sentiment, sentimentColor, riskLevel, riskType,
+    industry, clientSize, isEarlyWarning, isBreaking,
+    smartCategory,
+    entities: [...new Set(entities)],
+    keywords,
+  }
+}
+
+export function smartRoute(title: string, summary: string, sourceCategory: string): string {
+  const text = `${title} ${summary}`.toLowerCase()
+  if (text.includes('البنك المركزي') || text.includes('سياسة نقدية')) return 'cbe'
+  if (text.includes('دولار') || text.includes('سعر الصرف')) return 'dollar'
+  if (RISK_KEYWORDS.filter(k => text.includes(k)).length >= 2) return 'warning'
+  return sourceCategory
+}
+
+export function simpleHash(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash
+  }
+  return Math.abs(hash).toString(16)
+}
