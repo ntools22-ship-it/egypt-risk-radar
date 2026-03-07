@@ -1,75 +1,52 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
-import {
-  Home, Building2, TrendingUp, AlertTriangle,
-  Wheat, Factory, Search
-} from 'lucide-react'
+import { Home, Building2, CreditCard, AlertTriangle, BarChart2, DollarSign, Globe, Landmark, ChevronDown, ChevronUp } from 'lucide-react'
 
-const NAV_ITEMS = [
-  { id: 'all', label: 'الرئيسية', sub: 'جميع الأخبار', icon: Home, href: '/' },
-  { id: 'banks', label: 'البنوك والرقابة', sub: 'CBE · بنوك · تمويل', icon: Building2, href: '/?category=banks' },
-  { id: 'economy', label: 'الاقتصاد الكلي', sub: 'بلومبرغ · الأهرام · مباشر', icon: TrendingUp, href: '/?category=economy' },
-  { id: 'industry', label: 'الصناعة والشركات', sub: 'بورصة · إفصاحات · مصانع', icon: Factory, href: '/?category=industry' },
-  { id: 'agriculture', label: 'الزراعة والغذاء', sub: 'محاصيل · تصدير · أسعار', icon: Wheat, href: '/?category=agriculture' },
-  { id: 'warning', label: 'الإنذار المبكر', sub: 'تعثر · إفلاس · مخاطر', icon: AlertTriangle, href: '/?category=warning', danger: true },
+const NAV = [
+  { id: 'all', label: 'الكل', icon: Home },
+  { 
+    id: 'banks', label: 'أخبار البنوك', icon: Building2,
+    subs: [{id: 'banks_gov', label: 'بنوك حكومية'}, {id: 'banks_private', label: 'بنوك خاصة'}]
+  },
+  { id: 'credit', label: 'تمويل وائتمان', icon: CreditCard },
+  { id: 'warning', label: 'إنذار مبكر', icon: AlertTriangle, danger: true },
+  { id: 'sectors', label: 'أخبار القطاعات', icon: BarChart2 },
+  { id: 'fx', label: 'أسعار الصرف', icon: DollarSign },
+  { id: 'cbe', label: 'أخبار المركزي', icon: Landmark },
+  { id: 'global', label: 'عالمي', icon: Globe },
 ]
 
 export function Sidebar({ activeCategory }: { activeCategory: string }) {
+  const [openSub, setOpenSub] = useState<string | null>(null)
+
   return (
-    <aside className="hidden lg:flex flex-col w-60 min-h-[calc(100vh-4rem)] bg-radar-surface border-l border-radar-border sticky top-14 h-[calc(100vh-4rem)] overflow-y-auto">
-      <nav className="flex-1 p-3 space-y-0.5">
-        <div className="px-3 py-2 mb-1 text-right">
-          <span className="text-[10px] font-bold text-radar-muted uppercase tracking-widest font-cairo">الأقسام</span>
-        </div>
-        
-        {NAV_ITEMS.map(({ id, label, sub, icon: Icon, href, danger }) => {
-          const isActive = activeCategory === id
-          return (
+    <aside className="w-64 bg-[#0d1117] border-l border-gray-800 hidden lg:flex flex-col">
+      <div className="p-6 border-b border-gray-800">
+        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+          رادار المخاطر
+        </h1>
+      </div>
+      
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        {NAV.map((item) => (
+          <div key={item.id}>
             <Link
-              key={id}
-              href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group dir-rtl ${
-                isActive
-                  ? danger ? 'bg-red-500/15 border border-red-500/20'
-                  : 'bg-blue-500/15 border border-blue-500/20'
-                  : 'hover:bg-radar-card'
+              href={item.id === 'all' ? '/' : `/?category=${item.id}`}
+              className={`flex items-center justify-between p-3 rounded-lg transition-all ${
+                activeCategory === item.id 
+                ? 'bg-blue-600/10 text-blue-400' 
+                : 'text-gray-400 hover:bg-gray-800'
               }`}
             >
-              <Icon className={`w-4 h-4 flex-shrink-0 ${
-                isActive
-                  ? danger ? 'text-red-400' : 'text-blue-400'
-                  : 'text-radar-muted group-hover:text-radar-text'
-              }`} />
-              <div className="flex-1 min-w-0 text-right">
-                <div className={`text-sm font-semibold truncate font-cairo ${
-                  isActive ? danger ? 'text-red-300' : 'text-white' : 'text-radar-text'
-                }`}>{label}</div>
-                <div className="text-[10px] text-radar-muted truncate font-cairo">{sub}</div>
+              <div className="flex items-center gap-3">
+                <item.icon className={`w-5 h-5 ${item.danger ? 'text-red-500' : ''}`} />
+                <span className="font-medium">{item.label}</span>
               </div>
-              {danger && !isActive && (
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-              )}
             </Link>
-          )
-        })}
+          </div>
+        ))}
       </nav>
-
-      <div className="p-3 border-t border-radar-border">
-        <Link
-          href="/search"
-          className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-radar-card hover:bg-radar-border transition-colors dir-rtl"
-        >
-          <Search className="w-4 h-4 text-radar-muted" />
-          <span className="text-sm text-radar-muted font-cairo">ابحث عن شركة...</span>
-        </Link>
-      </div>
-
-      <div className="p-4 border-t border-radar-border text-center">
-        <p className="text-[10px] text-radar-dim leading-relaxed font-sans">
-          رادار المخاطر المصري<br />
-          {new Date().getFullYear()} © جميع الحقوق محفوظة
-        </p>
-      </div>
     </aside>
   )
 }
