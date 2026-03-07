@@ -1,6 +1,3 @@
-// lib/sources.ts
-// رادار المخاطر — نظام المصادر والتصنيف الكامل
-
 export interface SourceConfig {
   id: string
   name: string
