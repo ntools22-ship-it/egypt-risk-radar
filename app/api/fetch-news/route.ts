@@ -8,27 +8,40 @@ export const maxDuration = 60
 export async function GET(req: NextRequest) {
   const urlSecret = req.nextUrl.searchParams.get('secret')
   const providedSecret = urlSecret ?? ''
-  
+
+  // التأكد من كلمة السر للتشغيل
   if (providedSecret !== (process.env.CRON_SECRET || 'radar2026secret')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // تنظيف الأخبار القديمة (أكثر من 30 يوم)
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString()
   await supabaseAdmin.from('news_feed').delete().lt('published_at', thirtyDaysAgo)
 
-  const results = { fetched: 0, inserted: 0, duplicates: 0, skipped_lang: 0, errors: [] as string[], sources_processed: 0 }
+  const results = { 
+    fetched: 0, 
+    inserted: 0, 
+    duplicates: 0, 
+    skipped_lang: 0, 
+    errors: [] as string[], 
+    sources_processed: 0 
+  }
 
   for (const source of SOURCES.filter(s => s.enabled && s.rss_url)) {
     try {
       const feed = await parseRSSFeed(source.rss_url!)
-      if (!feed) { results.errors.push(`${source.id}: no feed`); continue }
+      if (!feed) {
+        results.errors.push(`${source.id}: no feed`)
+        continue
+      }
       results.sources_processed++
 
       for (const item of feed.items) {
         results.fetched++
         const title = item.title ?? ''
-        const summary = item.contentSnippet || item.content || ''
-        
+        const summary = (item.description ?? '').slice(0, 600)
+
+        // فلتر اللغة العربية
         if (!isArabicText(title)) {
           results.skipped_lang++
           continue
@@ -36,17 +49,23 @@ export async function GET(req: NextRequest) {
 
         const hash = simpleHash(title + source.id)
 
+        // التحقق من وجود الخبر مسبقاً
         const { data: existing } = await supabaseAdmin
-          .from('news_feed').select('id, tabs')
-          .eq('content_hash', hash).single()
+          .from('news_feed')
+          .select('id, tabs')
+          .eq('content_hash', hash)
+          .single()
 
         const cl = classifyNews(title, summary, source.category)
 
         if (existing) {
+          // تحديث التبويبات (Tabs) إذا وجد الخبر في تصنيف جديد
           const oldTabs: string[] = existing.tabs ?? []
           const newTabs = [...new Set([...oldTabs, ...cl.tabs])]
+          
           if (newTabs.length !== oldTabs.length) {
-            await supabaseAdmin.from('news_feed')
+            await supabaseAdmin
+              .from('news_feed')
               .update({ tabs: newTabs, updated_at: new Date().toISOString() })
               .eq('id', existing.id)
           }
@@ -54,6 +73,7 @@ export async function GET(req: NextRequest) {
           continue
         }
 
+        // إدراج خبر جديد
         const publishedAt = item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString()
 
         const { error } = await supabaseAdmin.from('news_feed').insert({
@@ -77,4 +97,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ success: true, ...results })
 }
 
-export async function POST(req: NextRequest) { return GET(req) }
+export async function POST(req: NextRequest) {
+  return GET(req)
+}
