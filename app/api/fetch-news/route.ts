@@ -7,23 +7,26 @@ export const maxDuration = 60
 
 export async function GET(req: NextRequest) {
   const urlSecret = req.nextUrl.searchParams.get('secret')
-  if (urlSecret !== (process.env.NEXT_PUBLIC_SYNC_TRIGGER || 'radar2026secret')) {
+  const providedSecret = urlSecret ?? ''
+  
+  if (providedSecret !== (process.env.CRON_SECRET || 'radar2026secret')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString()
   await supabaseAdmin.from('news_feed').delete().lt('published_at', thirtyDaysAgo)
 
-  const results = { fetched: 0, inserted: 0, duplicates: 0, skipped_lang: 0, errors: [] as string[] }
+  const results = { fetched: 0, inserted: 0, duplicates: 0, skipped_lang: 0, errors: [] as string[], sources_processed: 0 }
 
   for (const source of SOURCES.filter(s => s.enabled && s.rss_url)) {
     try {
       const feed = await parseRSSFeed(source.rss_url!)
-      if (!feed) continue
+      if (!feed) { results.errors.push(`${source.id}: no feed`); continue }
+      results.sources_processed++
 
       for (const item of feed.items) {
         results.fetched++
-        const title = item.title || ''
+        const title = item.title ?? ''
         const summary = item.contentSnippet || item.content || ''
         
         if (!isArabicText(title)) {
@@ -31,21 +34,38 @@ export async function GET(req: NextRequest) {
           continue
         }
 
-        const cl = classifyNews(title, summary, source.category)
         const hash = simpleHash(title + source.id)
-        const publishedAt = new Date(item.pubDate || new Date()).toISOString()
 
-        const { error } = await supabaseAdmin.from('news_feed').upsert({
+        const { data: existing } = await supabaseAdmin
+          .from('news_feed').select('id, tabs')
+          .eq('content_hash', hash).single()
+
+        const cl = classifyNews(title, summary, source.category)
+
+        if (existing) {
+          const oldTabs: string[] = existing.tabs ?? []
+          const newTabs = [...new Set([...oldTabs, ...cl.tabs])]
+          if (newTabs.length !== oldTabs.length) {
+            await supabaseAdmin.from('news_feed')
+              .update({ tabs: newTabs, updated_at: new Date().toISOString() })
+              .eq('id', existing.id)
+          }
+          results.duplicates++
+          continue
+        }
+
+        const publishedAt = item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString()
+
+        const { error } = await supabaseAdmin.from('news_feed').insert({
           title,
           summary,
-          url: item.link,
-          source_id: source.id,
+          source_url: item.link,
           source_name: source.name_ar,
           category: source.category,
           tabs: cl.tabs,
           content_hash: hash,
           published_at: publishedAt,
-        }, { onConflict: 'content_hash' })
+        })
 
         if (!error) results.inserted++
       }
@@ -56,3 +76,5 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ success: true, ...results })
 }
+
+export async function POST(req: NextRequest) { return GET(req) }
